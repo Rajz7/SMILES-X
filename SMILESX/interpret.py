@@ -3,12 +3,16 @@ import pandas as pd
 import os
 import math
 import glob
+import io
 
 import logging
 from tabulate import tabulate
 
 from rdkit import Chem
 from rdkit.Chem import Draw
+from rdkit.Chem.Draw import rdMolDraw2D
+from rdkit.Chem.Draw import SimilarityMaps
+from PIL import Image
 
 from typing import Optional
 from typing import List
@@ -219,8 +223,7 @@ def interpret(model, smiles, true=None, true_err=None, pred=None, log_verbose: b
 
             markers, stemlines, baseline = plt.stem([ix for ix in range(ismiles_len)],
                                                     relative_diff,
-                                                    'k.-',
-                                                    use_line_collection=True)
+                                                    'k.-')
 
             plt.setp(baseline, color='k', linewidth=2, linestyle='--')
             plt.setp(markers, linewidth=1, marker='o', markersize=10, markeredgecolor = 'black')
@@ -286,27 +289,26 @@ def get_similarity_map_from_weights(mol, weights, pred_val, true_val = False, co
 
     if mol.GetNumAtoms() < 2:
         raise ValueError("too few atoms")
-    fig = Draw.MolToMPL(mol, coordScale=coordScale, size=size, **kwargs)
-    ax = fig.gca()
-    
-    x, y, z = Draw.calcAtomGaussians(mol, sigma, weights=weights, step=step)
-    # scaling
-    maxScale = max(math.fabs(np.min(z)), math.fabs(np.max(z)))
-    minScale = min(math.fabs(np.min(z)), math.fabs(np.max(z)))
-    
-    fig.axes[0].imshow(z, cmap=colorMap, interpolation='bilinear', origin='lower',
-                     extent=(0, 1, 0, 1), vmin=minScale, vmax=maxScale)
-    ax.imshow(z, cmap=colorMap, interpolation='bilinear', origin='lower',
-                     extent=(0, 1, 0, 1), vmin=minScale, vmax=maxScale)
-    # Contour lines
-    # Only draw them when at least one weight is not zero
-    if len([w for w in weights if w != 0.0]):
-        contourset = ax.contour(x, y, z, contourLines, colors=colors, alpha=alpha, **kwargs)
-        for j, c in enumerate(contourset.collections):
-            if contourset.levels[j] == 0.0:
-                c.set_linewidth(0.0)
-            elif contourset.levels[j] < 0:
-                c.set_dashes([(0, (3.0, 3.0))])
+
+    # Generate similarity map via RDKit's 2D drawer and convert to Matplotlib figure
+    width, height = int(size[0]), int(size[1])
+    draw2d = rdMolDraw2D.MolDraw2DCairo(width, height)
+    SimilarityMaps.GetSimilarityMapFromWeights(mol,
+                                               weights,
+                                               draw2d=draw2d,
+                                               sigma=sigma,
+                                               coordScale=coordScale,
+                                               step=step,
+                                               contourLines=contourLines,
+                                               alpha=alpha,
+                                               colors=colors,
+                                               colorMap=colorMap)
+    draw2d.FinishDrawing()
+    png_bytes = draw2d.GetDrawingText()
+    image = Image.open(io.BytesIO(png_bytes)).convert("RGBA")
+
+    fig, ax = plt.subplots(figsize=(width/100, height/100), dpi=100)
+    ax.imshow(image)
     if true_val:
         ax.text(0.97, 0.02, r"Experimental: "+true_val+"\nPredicted: "+pred_val,
         verticalalignment='bottom', horizontalalignment='right',

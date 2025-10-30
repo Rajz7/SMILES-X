@@ -71,6 +71,7 @@ def set_gpuoptions(n_gpus = 1,
         return strategy, devices
         
     gpus = tf.config.experimental.list_physical_devices('GPU')    
+    devices = []
     if gpus:
         try:
             # Keep only requested GPUs
@@ -81,9 +82,11 @@ def set_gpuoptions(n_gpus = 1,
             tf.config.experimental.set_visible_devices(gpus, 'GPU')
             devices = tf.config.list_logical_devices('GPU')
             print_fn("{} Physical GPU(s), {} Logical GPU(s) detected and configured.".format(len(gpus), len(devices)))
-        except RuntimeError as e: 
+        except (RuntimeError, IndexError) as e:
+            # TensorFlow prevents reconfiguration after GPUs are initialized, or an invalid index was requested.
             print_fn(e)
-                
+            devices = tf.config.list_logical_devices('GPU')
+
         gpus_list_len = len(devices)
         if gpus_list_len > 0:
             if gpus_list_len > 1: 
@@ -96,6 +99,13 @@ def set_gpuoptions(n_gpus = 1,
             print_fn('{} GPU device(s) will be used.'.format(strategy.num_replicas_in_sync))
             print_fn("")
             return strategy, devices
+        # No logical GPU accessible, fall back to CPU
+        print_fn("No logical GPU available after configuration attempt. Falling back to CPU.")
+        device = "/cpu:0"
+        strategy = tf.distribute.OneDeviceStrategy(device=device)
+        devices = tf.config.list_logical_devices('CPU')
+        return strategy, devices
+
     else:
         device = "/cpu:0"
         strategy = tf.distribute.OneDeviceStrategy(device=device)

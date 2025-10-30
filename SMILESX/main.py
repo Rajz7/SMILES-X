@@ -45,7 +45,7 @@ from tensorflow.keras import backend as K
 from sklearn.model_selection import GroupKFold, StratifiedKFold
 
 from SMILESX import utils, token, augm
-from SMILESX import model, bayopt, geomopt
+from SMILESX import model, geomopt, bayopt
 from SMILESX import visutils, trainutils
 from SMILESX import loadmodel
 
@@ -782,7 +782,7 @@ def main(data_smiles,
                                               scale_output=scale_output, 
                                               pretrained_model=pretrained_model)
             else:
-                logging.info("Bayesian optimisation is not requested.")
+                logging.info("Optuna-based Bayesian optimisation is not requested.")
                 logging.info("")
                 if geomopt == 'off':
                     logging.info("Using reference values for training.")

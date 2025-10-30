@@ -32,17 +32,30 @@ All these datasets are available in the `data/` directory above.
 For now, the SMILES-X has been successfully runned on Titan(Xp, V, V100, P100), GTX 1660 and RTX 2070/80 NVIDIA GPUs.</br>
 </br>
 For a good start, follow the [RDKit installation guide](https://www.rdkit.org/docs/Install.html) for installing the RDKit via conda.</br>
-Then, install the following dependencies in your RDKit conda environment (e.g. my-rdkit-env):</br>
-* python == 3.7
-* pandas == 1.3.5
-* numpy == 1.18.5
-* matplotlib == 3.5.2
-* GPy == 1.10.0
-* GPyOpt == 1.2.6
-* scikit-learn == 1.0.2
-* adjustText == 0.8
-* scipy == 1.7.3
-* tensorflow == 2.1.3
+
+### Environment setup
+
+Recreate the exact development environment using the curated configuration files at the repository root:
+
+```bash
+conda env create -f environment.yml
+conda activate smilesx-test
+```
+
+If you prefer a virtualenv/pip workflow, the same package set is available via:
+
+```bash
+python -m venv smilesx-test
+source smilesx-test/bin/activate  # Windows: smilesx-test\Scripts\activate
+pip install -r requirements.txt
+```
+
+Regenerate the files after dependency changes with:
+
+```bash
+conda env export --from-history > environment.yml
+pip list --format=freeze > requirements.txt
+```
 
 ## Usage
 Please use the python notebook `Example.ipynb` it as a guide. 

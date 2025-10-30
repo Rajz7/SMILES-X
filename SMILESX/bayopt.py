@@ -2,20 +2,19 @@
 
 """
 
-import os
 import time
 import math
 import logging
 import datetime
 
 import numpy as np
-import pandas as pd
 
-import GPy, GPyOpt
+import optuna
+from optuna.samplers import TPESampler
 
 from tensorflow.keras import metrics
 from tensorflow.keras import backend as K
-from tensorflow.keras.optimizers import Adam, SGD
+from tensorflow.keras.optimizers import Adam
 
 from SMILESX import utils, augm, token, model, trainutils
 
@@ -95,40 +94,32 @@ def bayopt_run(smiles, prop, extra, train_val_idx, smiles_concat, tokens, max_le
         logging.info("")
         logging.warning("The SMILES-X execution is aborted.")
         raise utils.StopExecution
-
-    bayopt_bounds = []
+    search_space = {key: bounds for key, bounds in hyper_bounds.items() if bounds is not None}
     logging.info('Bayesian optimisation is requested for:')
-    for key in hyper_bounds.keys():
-        if hyper_bounds[key] is not None:
-            logging.info('      - {}'.format(key))
-            # Setup GPyOpt bounds format
-            bayopt_bounds.append({'name': key, 'type': 'discrete', 'domain': hyper_bounds[key]})
-    logging.info('*Note: selected hyperparameters will be optimized simultaneously.')
+    for key in search_space.keys():
+        logging.info('      - {}'.format(key))
+    logging.info('*Note: selected hyperparameters are sampled jointly via Optuna.')
     logging.info("")
 
-    # The function to be optimized during Bayesian optimization
-    # It is nested because GPyOpt optimizes all the passed parameters,
-    # but we only need to optimize a part of architecture
-    def bayopt_func(params):
-        # Reverse for popping
-        params = params.flatten().tolist()[::-1]
-        logging.info('Model: {}'.format(params))
+    # Set up Optuna
+    optuna.logging.set_verbosity(optuna.logging.WARNING)
+    sampler = TPESampler(multivariate=True, seed=42)
+    ordered_params = list(search_space.keys())
+    extra_dim = extra.shape[1] if extra is not None else None
 
-        # Setting up the requested parameters for the optimization
-        if extra is not None:
-            extra_dim = extra.shape[1]
-        else:
-            extra_dim = None
-
-        hyper_bo = hyper_opt
-        for key in hyper_bounds.keys():
-            if hyper_bounds[key] is not None:
-                hyper_bo[key] = params.pop()
+    def objective(trial):
+        """Optuna objective: returns mean validation score for sampled hyperparameters."""
+        trial_params = hyper_opt.copy()
+        chosen_values = []
+        for key in ordered_params:
+            suggestion = trial.suggest_categorical(key, search_space[key])
+            trial_params[key] = suggestion
+            chosen_values.append(suggestion)
+        logging.info("Trial #%d hyperparameters: %s", trial.number, chosen_values)
 
         score_valids = []
         for irun in range(bo_runs):
-            # Preparing the data for optimization
-            # Random train/val splitting for every run to assure better generalizability of the optimized parameters
+            # Random train/val splitting for every run to assure better generalizability
             x_train, x_valid, extra_train, extra_valid, y_train, y_valid = utils.rand_split(smiles_input=smiles,
                                                                                             prop_input=prop,
                                                                                             extra_input=extra,
@@ -136,38 +127,38 @@ def bayopt_run(smiles, prop, extra, train_val_idx, smiles_concat, tokens, max_le
                                                                                             train_val_idx=train_val_idx,
                                                                                             test_idx=None,
                                                                                             bayopt=True)
-            # Scale the outputs
+            # Scale the outputs when required
             if scale_output:
-                y_train_scaled, y_valid_scaled, y_test_scaled, scaler = utils.robust_scaler(train=y_train,
-                                                                                            valid=y_valid,
-                                                                                            test=None,
-                                                                                            file_name=None,
-                                                                                            ifold=None)
+                y_train_scaled, y_valid_scaled, _, _ = utils.robust_scaler(train=y_train,
+                                                                           valid=y_valid,
+                                                                           test=None,
+                                                                           file_name=None,
+                                                                           ifold=None)
             else:
-                y_train_scaled, y_valid_scaled, y_test_scaled, scaler = y_train, y_valid, None, None
+                y_train_scaled, y_valid_scaled = y_train, y_valid
             # Check/augment the data if requested
             train_augm = augm.augmentation(x_train,
-                                       train_val_idx,
-                                       extra_train,
-                                       y_train_scaled,
-                                       check_smiles,
-                                       augmentation)
+                                           train_val_idx,
+                                           extra_train,
+                                           y_train_scaled,
+                                           check_smiles,
+                                           augmentation)
 
             valid_augm = augm.augmentation(x_valid,
-                                       train_val_idx,
-                                       extra_valid,
-                                       y_valid_scaled,
-                                       check_smiles,
-                                       augmentation)
-            
+                                           train_val_idx,
+                                           extra_valid,
+                                           y_valid_scaled,
+                                           check_smiles,
+                                           augmentation)
+
             x_train_enum, extra_train_enum, y_train_enum, y_train_clean, x_train_enum_card, _ = train_augm
             x_valid_enum, extra_valid_enum, y_valid_enum, y_valid_clean, x_valid_enum_card, _ = valid_augm
-            
+
             # Concatenate multiple SMILES into one via 'j' joint
             if smiles_concat:
                 x_train_enum = utils.smiles_concat(x_train_enum)
                 x_valid_enum = utils.smiles_concat(x_valid_enum)
-                
+
             x_train_enum_tokens = token.get_tokens(x_train_enum)
             x_valid_enum_tokens = token.get_tokens(x_valid_enum)
             x_train_enum_tokens_tointvec = token.int_vec_encode(tokenized_smiles_list=x_train_enum_tokens,
@@ -196,12 +187,12 @@ def bayopt_run(smiles, prop, extra, train_val_idx, smiles_concat, tokens, max_le
                     model_opt = model.LSTMAttModel.create(input_tokens=max_length + 1,
                                                           extra_dim=extra_dim,
                                                           vocab_size=len(tokens),
-                                                          embed_units=hyper_bo['Embedding'],
-                                                          lstm_units=hyper_bo['LSTM'],
-                                                          tdense_units=hyper_bo['TD dense'],
-                                                          dense_depth=dense_depth, 
+                                                          embed_units=trial_params['Embedding'],
+                                                          lstm_units=trial_params['LSTM'],
+                                                          tdense_units=trial_params['TD dense'],
+                                                          dense_depth=dense_depth,
                                                           model_type=model_type)
-            
+
             if model_type == 'regression':
                 model_loss = 'mse'
                 model_metrics = [metrics.mae, metrics.mse]
@@ -210,11 +201,11 @@ def bayopt_run(smiles, prop, extra, train_val_idx, smiles_concat, tokens, max_le
                 model_loss = 'binary_crossentropy'
                 model_metrics = ['accuracy']
                 hist_val_name = 'val_loss'
-            
+
             with strategy.scope():
-                batch_size = int(hyper_bo['Batch size']) * strategy.num_replicas_in_sync
+                batch_size = int(trial_params['Batch size']) * strategy.num_replicas_in_sync
                 batch_size_val = min(len(x_train_enum_tokens_tointvec), batch_size)
-                custom_adam = Adam(lr=math.pow(10,-float(hyper_bo['Learning rate'])))
+                custom_adam = Adam(lr=math.pow(10, -float(trial_params['Learning rate'])))
                 model_opt.compile(loss=model_loss, optimizer=custom_adam, metrics=model_metrics)
 
                 history = model_opt.fit_generator(generator=\
@@ -232,46 +223,35 @@ def bayopt_run(smiles, prop, extra, train_val_idx, smiles_concat, tokens, max_le
                                                   initial_epoch=0,
                                                   verbose=0)
 
-            # Skip the first half of epochs during evaluation
-            # Ignore the noisy burn-in period of training
+            # Skip the first half of epochs during evaluation to ignore the burn-in period
             best_epoch = np.argmin(history.history['val_loss'][int(bo_epochs//2):])
             score_valid = history.history[hist_val_name][best_epoch + int(bo_epochs//2)]
 
-            if math.isnan(score_valid): # treat diverging architectures (rare event)
+            if math.isnan(score_valid):
                 score_valid = math.inf
             score_valids.append(score_valid)
 
-        logging.info('Average best validation score: {0:0.4f}'.format(np.mean(score_valids)))
-
-        return np.mean(score_valids)
+        mean_score = float(np.mean(score_valids))
+        logging.info("Trial #%d average best validation score: %.4f", trial.number, mean_score)
+        return mean_score
 
     start_bo = time.time()
 
-    logging.info("~~~~~")
-    logging.info("Random initialization:")
-    Bayes_opt = GPyOpt.methods.BayesianOptimization(f=bayopt_func,
-                                                    domain=bayopt_bounds,
-                                                    acquisition_type='EI',
-                                                    acquisition_jitter=0.1,
-                                                    initial_design_numdata=bo_rounds,
-                                                    exact_feval=True,
-                                                    normalize_Y=False,
-                                                    num_cores=1)
-    logging.info("~~~~~")
-    logging.info("Optimization:")
-    Bayes_opt.run_optimization(max_iter=bo_rounds)
-    opt_params = Bayes_opt.x_opt.tolist()[::-1] # reverse the list for popping from head later
-    for key in hyper_bounds.keys():
-        if hyper_bounds[key] is not None:
-            hyper_opt[key] = opt_params.pop()
+    study = optuna.create_study(direction="minimize", sampler=sampler)
+    n_trials = max(int(bo_rounds), 1)
+    study.optimize(objective, n_trials=n_trials)
 
-    end_bo = time.time()
-    elapsed_bo = end_bo - start_bo
+    for key, value in study.best_params.items():
+        hyper_opt[key] = value
+
+    elapsed_bo = time.time() - start_bo
 
     logging.info("")
     logging.info("*** Bayesian hyperparameters optimization is completed ***")
     logging.info("")
     logging.info("Bayesian optimisation duration: {}".format(str(datetime.timedelta(seconds=elapsed_bo))))
+    for key in search_space.keys():
+        logging.info("    - {}: {}".format(key, hyper_opt[key]))
     logging.info("")
 
     return hyper_opt
