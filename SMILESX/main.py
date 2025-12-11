@@ -16,14 +16,14 @@ functions:
 
 # TODO (Guillaume) : check redundant imports against main.py
 import os
-import sys
-import glob
+import sys #redundant import
+import glob #redundant import
 import math
 import time
 import logging
 import datetime
-import collections
-import pickle as pkl
+import collections #redundant import
+import pickle as pkl #redundant import
 
 # Suppress Tensorflow warnings
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
@@ -33,7 +33,7 @@ import pandas as pd
 from tabulate import tabulate
 from typing import List, Optional
 
-import matplotlib.pyplot as plt
+import matplotlib.pyplot as plt #redundant import
 
 import tensorflow as tf
 from tensorflow.keras.optimizers import Adam

@@ -321,6 +321,9 @@ def robust_scaler(train, valid, test, file_name, ifold):
 def smiles_concat(smiles_list):
     """ Concatenate multiple SMILES in one via 'j'
     
+    Prevents misusage when only a single SMILES string is provided
+    instead of a list of SMILES strings.
+
     Parameters
     ----------
     smiles_list: array
@@ -333,6 +336,18 @@ def smiles_concat(smiles_list):
     """
     concat_smiles_list = []
     for smiles in smiles_list:
+        #validation
+        if isinstance(smiles, str):
+            logging.error("smiles_concat expected a list of SMILES per entry but got a STRING. ")
+            logging.error("Wrap your SMILES into a list, e.g. ['CCO']")
+            continue
+            
+        elif not isinstance(smiles, (list, tuple)):
+            logging.error(f"Invalid entry type {type(smiles)}. Expected list or tuple of SMILES. ")
+            logging.error("Skipping this entry.")
+            continue
+
+        #normal concatenation
         concat_smiles_list.append('j'.join([ismiles for ismiles in smiles if ismiles != '']))
     return concat_smiles_list
 ##

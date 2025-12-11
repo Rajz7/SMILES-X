@@ -9,38 +9,55 @@ import numpy as np
 
 from tensorflow.keras import backend as K
 
-def int_vec_encode(tokenized_smiles_list, max_length, vocab):
-    """Encodes SMILES as a vector of integers
+def int_vec_encode(tokenized_smiles_list, vocab):
+    """
+    Encodes tokenized SMILES into integer vectors with dynamic padding.
+    No truncation is applied. All SMILES are padded to the length of the
+    longest SMILES in the input list.
 
     Parameters
     ----------
-    tokenized_smiles_list: list(list(str))
-        List of tokenized SMILES, where every list(str) corresponds to a single SMILES
-    max_length: int
-        Maximum SMILES length
-    vocab:
-        Vocabulary, or a list of all possible tokens contained within the data
+    tokenized_smiles_list : list(list(str))
+        List of tokenized SMILES, where every list(str) corresponds to a single SMILES.
+    vocab : list(str)
+        Vocabulary or list of all possible tokens contained within the data.
 
     Returns
     -------
-    int_smiles_array: np.array
-        Numpy array of encoded SMILES of shape (len(tokenized_smiles_list), max_length)
+    int_smiles_array : np.ndarray
+        Integer-encoded SMILES padded to uniform length of shape
+        (len(tokenized_smiles_list), max_length).
+
+    If SMILES-X is later upgraded to a transformer-based model like BERT
+    this function would also return an `attention_mask`, where 1 is real token and
+    0 is padding token.
     """
 
     token_to_int = get_tokentoint(vocab)
+
+    # Determine maximum SMILES length in the dataset
+    max_length = max(len(ismiles) for ismiles in tokenized_smiles_list)
+
+    # Initialize output arrays
     int_smiles_array = np.zeros((len(tokenized_smiles_list), max_length), dtype=np.int32)
-    for csmiles,ismiles in enumerate(tokenized_smiles_list):
-        ismiles_tmp = list()
-        if len(ismiles)<= max_length:
-            ismiles_tmp = ['pad']*(max_length-len(ismiles))+ismiles # Force output vectors to have same length
-        else:
-            ismiles_tmp = ismiles[-max_length:] # longer vectors are truncated (to be changed...)
-        integer_encoded = [token_to_int[itoken] if(itoken in vocab) \
-                           else token_to_int['unk']\
-                           for itoken in ismiles_tmp]
-        int_smiles_array[csmiles] = integer_encoded
+
+    for csmiles, ismiles in enumerate(tokenized_smiles_list):
+
+        # Right-pad SMILES to match max_length
+        pad_len = max_length - len(ismiles)
+        ismiles_tmp = ismiles + ['pad'] * pad_len
+
+        # Convert tokens to integers (use 'unk' for OOV tokens)
+        integer_encoded = [
+            token_to_int[itoken] if itoken in vocab else token_to_int['unk']
+            for itoken in ismiles_tmp
+        ]
+
+        int_smiles_array[csmiles] = integer_encode
 
     return int_smiles_array
+
+
 ##
 
 def get_tokens(smiles_list, split_l = 1):
