@@ -117,7 +117,3 @@ text
 These updates were implemented as part of a **research-oriented fork** to improve reliability, interpretability, and extendability in molecular machine learning workflows.
 
 ---
-
-**Author:** [Your Name or Research Group]  
-**Base Repository:** [Original SMILES-X Repository URL]  
-**License:** MIT (or indicate applicable license)
