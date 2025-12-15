@@ -1,76 +1,65 @@
-# SMILES-X
-The **SMILES-X** is an autonomous pipeline that finds best neural architectures to predict a physicochemical property from molecular SMILES only (see [OpenSMILES](http://opensmiles.org/opensmiles.html)). No human-engineered descriptors are needed. The SMILES-X has been especially designed for small datasets (<< 1000 samples). 
+# SMILES Processing & Classification Utilities — Fork Updates
 
-Read our open access paper ["SMILES-X: autonomous molecular compounds characterization for small datasets without descriptors"](https://iopscience.iop.org/article/10.1088/2632-2153/ab57f3).
+## Overview
+This fork introduces several improvements and bug fixes to the SMILES-X utility functions and visualization tools for molecular data. The updates enhance **robustness, flexibility, and uncertainty estimation** in the pipeline.
 
-## Who can use the SMILES-X?
-Researchers/engineers/students in the fields of materials science, physicochemistry, drug discovery and related fields
- 
-## Which kind of data can be used?
-The SMILES-X is dedicated to **small datasets (<< 1000 samples) of (molecular SMILES, experimental/simulated property)**
+---
 
-## What can I do with it?
-With the SMILES-X, you can:
-* **Design specific neural architectures** fitted to your small dataset via Bayesian optimization.
-* **Predict molecular properties** of a list of SMILES based on designed models ensembling **without human-engineered descriptors**.
-* **Interpret a prediction** by visualizing the salient elements and/or substructures most related to a property
+## Key Changes & Enhancements
 
-## What is the efficiency of the SMILES-X on benchmark datasets?
-![table1](/images/Table1_SMILESX_paper.png)
+### 1. `smiles_concat` Validation
+- Added input validation to prevent misusage when a single SMILES string is provided instead of a list.
+- Logs clear error messages for incorrect input types.
+- Ensures only valid lists or tuples of SMILES are concatenated using `'j'`.
 
-* ESOL: logarithmic aqueous solubility (mols/L) for 1128 organic small molecules.
-* FreeSolv: calculated and experimental hydration free energies (kcal/mol) for 642 small neutral molecules in water.
-* Lipophilicity: experimental data on octanol/water distribution coefficient (logD at pH 7.4) for 4200 compounds. 
+```python
+if isinstance(smiles, str):
+    logging.error("Wrap your SMILES into a list, e.g. ['CCO']")
 
-All these datasets are available in the `data/` directory above. 
+### 2. int_vec_encode with Dynamic Padding
 
-## Requirements
-**SMILES-X works on CPU, but it is highly recommended to have an access to GPU**:</br>
-* CUDA == 10.1
-* cuDNN == 8.0.3
+Replaced truncation with dynamic padding to the length of the longest SMILES.
 
-For now, the SMILES-X has been successfully runned on Titan(Xp, V, V100, P100), GTX 1660 and RTX 2070/80 NVIDIA GPUs.</br>
-</br>
-For a good start, follow the [RDKit installation guide](https://www.rdkit.org/docs/Install.html) for installing the RDKit via conda.</br>
+Ensures no information loss for longer SMILES strings.
 
-### Environment setup
+Converts unknown tokens to 'unk' and pads sequences with 'pad'.
 
-Recreate the exact development environment using the curated configuration files at the repository root:
+pad_len = max_length - len(ismiles)
+ismiles_tmp = ismiles + ['pad'] * pad_len
 
-```bash
-conda env create -f environment.yml
-conda activate smilesx-test
-```
 
-If you prefer a virtualenv/pip workflow, the same package set is available via:
+Prepares data for future transformer-based models (e.g., SMILES-BERT) with potential attention masks.
 
-```bash
-python -m venv smilesx-test
-source smilesx-test/bin/activate  # Windows: smilesx-test\Scripts\activate
-pip install -r requirements.txt
-```
+### 3. sigma_classification_metrics — Monte Carlo Uncertainty
 
-Regenerate the files after dependency changes with:
+Added Monte Carlo simulation to estimate uncertainty in classification metrics.
 
-```bash
-conda env export --from-history > environment.yml
-pip list --format=freeze > requirements.txt
-```
+Adds Gaussian noise to predictions repeatedly and computes standard deviation of accuracy, precision, recall, F1, and PR-AUC.
 
-## Usage
-Please use the python notebook `Example.ipynb` it as a guide. 
+Provides robust uncertainty estimates for classification outputs.
 
-## How to cite the SMILES-X?
-```
-@article{lambard2020smiles,
-  title={SMILES-X: autonomous molecular compounds characterization for small datasets without descriptors},
-  author={Lambard, Guillaume and Gracheva, Ekaterina},
-  journal={Machine Learning: Science and Technology},
-  volume={1},
-  number={2},
-  pages={025004},
-  year={2020},
-  publisher={IOP Publishing}
-}
+pred_mc = pred + np.random.normal(0, err_pred, size=len(pred))
+metrics_mat[i] = [acc, prec, rec, f1, pr_auc]
 
-```
+### 4. Code Cleanup & Maintenance
+
+Flagged unnecessary imports in main.py.
+
+
+Impact
+
+Increased robustness: prevents common input errors and ensures consistent encoding.
+
+Better data handling: avoids information loss from truncation.
+
+Uncertainty-aware metrics: enables better interpretation of model performance under prediction noise.
+
+Readiness for advanced models: dynamic padding supports transformer-based architectures.
+
+Usage
+
+Use smiles_concat(smiles_list) for safe concatenation of SMILES sequences.
+
+Use int_vec_encode(tokenized_smiles_list, vocab) for integer encoding with dynamic padding.
+
+Use sigma_classification_metrics(true, pred, err_pred, n_mc=1000) to compute Monte Carlo uncertainty of classification metrics.

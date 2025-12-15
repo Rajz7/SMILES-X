@@ -491,11 +491,25 @@ def sigma_mae(err_pred):
 # Compute the error on the estimated classification scores based on the prediction error
 # via a Monte-Carlo simulation
 def sigma_classification_metrics(true, pred, err_pred, n_mc=1000):
-    N = float(len(err_pred))
-    sigma = np.zeros((n_mc, 5))
+    """
+    Monte-Carlo uncertainty estimation for classification metrics.
+    Adds Gaussian noise to predictions many times and measures how
+    much the metrics vary.
+    """
+    true = np.array(true).ravel()
+    pred = np.array(pred).ravel()
+    err_pred = np.array(err_pred).ravel()
+
+    metrics_mat = np.zeros((n_mc, 5))
+
     for i in range(n_mc):
-        pred_mc = pred + np.random.normal(0, err_pred)
-        sigma[i,0], sigma[i,1], sigma[i,2], sigma[i,3], sigma[i,4], _ = classification_metrics(true, pred_mc)
-    sigma = np.std(sigma, axis=0)
-    return sigma.ravel()
+        pred_mc = pred + np.random.normal(0, err_pred, size=len(pred))
+
+        pred_mc = np.clip(pred_mc, 0, 1)
+
+        acc, prec, rec, f1, pr_auc, _ = classification_metrics(true, pred_mc)
+        metrics_mat[i] = [acc, prec, rec, f1, pr_auc]
+
+    return metrics_mat.std(axis=0)
+
 ## 
