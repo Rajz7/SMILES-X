@@ -1,65 +1,91 @@
 # SMILES Processing & Classification Utilities — Fork Updates
 
 ## Overview
-This fork introduces several improvements and bug fixes to the SMILES-X utility functions and visualization tools for molecular data. The updates enhance **robustness, flexibility, and uncertainty estimation** in the pipeline.
+This fork introduces multiple improvements and bug fixes to the **SMILES-X** utility functions and visualization tools used for molecular data processing and classification.  
+The changes focus on improving **robustness**, **data integrity**, and **uncertainty estimation**.
 
 ---
 
 ## Key Changes & Enhancements
 
-### 1. `smiles_concat` Validation
-- Added input validation to prevent misusage when a single SMILES string is provided instead of a list.
+### 1. `smiles_concat` — Input Validation
+- Added validation to prevent misuse when a **single SMILES string** is passed instead of a list.
 - Logs clear error messages for incorrect input types.
-- Ensures only valid lists or tuples of SMILES are concatenated using `'j'`.
+- Ensures only lists or tuples of SMILES are concatenated using `'j'`.
 
 ```python
 if isinstance(smiles, str):
+    logging.error(
+        "smiles_concat expected a list of SMILES per entry but got a STRING."
+    )
     logging.error("Wrap your SMILES into a list, e.g. ['CCO']")
+2. int_vec_encode — Dynamic Padding (No Truncation)
+Replaced fixed-length truncation with dynamic padding.
 
-### 2. int_vec_encode with Dynamic Padding
+All SMILES are padded to the length of the longest sequence in the batch.
 
-Replaced truncation with dynamic padding to the length of the longest SMILES.
+Prevents information loss for longer molecules.
 
-Ensures no information loss for longer SMILES strings.
+Unknown tokens are mapped to 'unk', padding uses 'pad'.
 
-Converts unknown tokens to 'unk' and pads sequences with 'pad'.
-
+python
+Copy code
 pad_len = max_length - len(ismiles)
 ismiles_tmp = ismiles + ['pad'] * pad_len
+This design also prepares the pipeline for transformer-based models
+(e.g., SMILES-BERT), where attention masks may be required.
 
+3. sigma_classification_metrics — Monte Carlo Uncertainty Estimation
+Added Monte Carlo simulation to quantify uncertainty in classification metrics.
 
-Prepares data for future transformer-based models (e.g., SMILES-BERT) with potential attention masks.
+Gaussian noise is injected into predictions using predicted error estimates.
 
-### 3. sigma_classification_metrics — Monte Carlo Uncertainty
+Computes the standard deviation of:
 
-Added Monte Carlo simulation to estimate uncertainty in classification metrics.
+Accuracy
 
-Adds Gaussian noise to predictions repeatedly and computes standard deviation of accuracy, precision, recall, F1, and PR-AUC.
+Precision
 
-Provides robust uncertainty estimates for classification outputs.
+Recall
 
+F1-score
+
+PR-AUC
+
+python
+Copy code
 pred_mc = pred + np.random.normal(0, err_pred, size=len(pred))
 metrics_mat[i] = [acc, prec, rec, f1, pr_auc]
+Provides more reliable performance assessment under prediction uncertainty.
 
-### 4. Code Cleanup & Maintenance
+4. Code Cleanup & Maintenance
+Identified and flagged unnecessary imports in main.py.
 
-Flagged unnecessary imports in main.py.
+Improved code readability and maintainability.
 
+Reduced potential confusion during experimentation and extension.
 
 Impact
+Increased robustness: prevents common input errors in SMILES handling.
 
-Increased robustness: prevents common input errors and ensures consistent encoding.
+Improved data handling: eliminates truncation-induced information loss.
 
-Better data handling: avoids information loss from truncation.
+Uncertainty-aware evaluation: enables statistically meaningful interpretation of model performance.
 
-Uncertainty-aware metrics: enables better interpretation of model performance under prediction noise.
-
-Readiness for advanced models: dynamic padding supports transformer-based architectures.
+Future-ready design: dynamic padding supports modern deep learning architectures.
 
 Usage
+python
+Copy code
+# Safe concatenation of SMILES sequences
+smiles_concat(smiles_list)
 
-Use smiles_concat(smiles_list) for safe concatenation of SMILES sequences.
+# Integer encoding with dynamic padding
+int_vec_encode(tokenized_smiles_list, vocab)
 
-Use int_vec_encode(tokenized_smiles_list, vocab) for integer encoding with dynamic padding.
-
-Use sigma_classification_metrics(true, pred, err_pred, n_mc=1000) to compute Monte Carlo uncertainty of classification metrics.
+# Monte Carlo uncertainty estimation for classification metrics
+sigma_classification_metrics(true, pred, err_pred, n_mc=1000)
+Notes
+These updates were implemented as part of a research-oriented fork to improve
+model reliability, interpretability, and extensibility in molecular machine
+learning workflows.
